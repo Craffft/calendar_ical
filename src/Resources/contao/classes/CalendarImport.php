@@ -13,6 +13,9 @@
 namespace Contao;
 
 use Exception;
+use Kigkonsult\Icalcreator\Util\DateTimeFactory;
+use Kigkonsult\Icalcreator\Util\Util;
+use Kigkonsult\Icalcreator\Util\UtilDateTime;
 use Kigkonsult\Icalcreator\Vcalendar;
 
 /**
@@ -907,7 +910,7 @@ class CalendarImport extends \Backend
 
                     $repeatEach['value'] = (array_key_exists('INTERVAL', $rrule)) ? $rrule['INTERVAL'] : 1;
                     $arrFields['repeatEach'] = serialize($repeatEach);
-                    $arrFields['repeatEnd'] = (strlen($arrFields['endTime']) ? $arrFields['endTime'] : 0);
+                    $arrFields['repeatEnd'] = $this->getRepeatEnd($arrFields, $rrule, $repeatEach);
                 }
 
                 $foundevents[$uid]++;
@@ -1453,5 +1456,52 @@ class CalendarImport extends \Backend
         }
 
         return $widget;
+    }
+
+    /**
+     * @param array $arrFields
+     * @param array $rrule
+     * @param array $repeatEach
+     * @return int
+     * @throws Exception
+     */
+    private function getRepeatEnd($arrFields, $rrule, $repeatEach)
+    {
+        if (isset($rrule[Vcalendar::UNTIL]) && ($rrule[Vcalendar::UNTIL] != Util::$SP0)) {
+            if (isset($rrule[Vcalendar::UNTIL][Util::$LCHOUR])) {
+                // Fix timezone
+                $until = UtilDateTime::factory(
+                    $rrule[Vcalendar::UNTIL],
+                    [Vcalendar::TZID => Vcalendar::UTC],
+                    null,
+                    $tz[1]
+                );
+                $rrule[Vcalendar::UNTIL] = DateTimeFactory::strDate2arr($until->format());
+            }
+
+            return (int)mktime(
+                $rrule[Vcalendar::UNTIL][Util::$LCHOUR],
+                $rrule[Vcalendar::UNTIL][Util::$LCMIN],
+                $rrule[Vcalendar::UNTIL][Util::$LCSEC],
+                $rrule[Vcalendar::UNTIL][Util::$LCMONTH],
+                $rrule[Vcalendar::UNTIL][Util::$LCDAY],
+                $rrule[Vcalendar::UNTIL][Util::$LCYEAR]
+            );
+        }
+
+        if ((int)$arrFields['recurrences'] === 0) {
+            return (int)min(4294967295, PHP_INT_MAX);
+        } else {
+            if (isset($repeatEach['unit'], $repeatEach['value'])) {
+                $arg = $repeatEach['value'] * $arrFields['recurrences'];
+                $unit = $repeatEach['unit'];
+
+                $strtotime = '+ '.$arg.' '.$unit;
+
+                return (int)strtotime($strtotime, $arrFields['endTime']);
+            }
+        }
+
+        return 0;
     }
 }
